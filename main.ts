@@ -482,7 +482,11 @@ function v4aEdits(lines: string[], strict: boolean): Edit[] {
           cur = { anchor: cl.slice(2).trim() === '' ? null : cl.slice(2).trim(), eof: false, ops: [] };
           continue;
         }
-        if (cl.trim() === '*** End of File') {
+        if (cl.trimEnd() === '*** End of File') {
+          // Only a marker at column 0 ends the chunk: a context line is
+          // ' ' plus the file's line, so a file line that reads
+          // '*** End of File' arrives here as ' *** End of File' and
+          // must stay a context line, not end the chunk.
           if (cur === null) cur = { anchor: null, eof: false, ops: [] };
           cur.eof = true;
           pushCur();
@@ -651,14 +655,13 @@ function run(args: string[]): { code: number; out: string[] } {
   // moves in check mode: no writing, already handled (no files written above for moves? moves are in changed set, removed, so their files would not be written in the loop above!)
   // Handle writing for moves when not check: need write/delete move files explicitly
   if (!check) {
-    for (const [oldP, newP] of tree.moves) {
-      // only if this move was used (R emitted)
-      if (rows.some((r) => r.line === `R ${oldP} -> ${newP}`)) {
-        const now = tree.get(newP);
-        rmSync(oldP, { force: true });
-        if (now !== null) { mkdirSync(dirname(newP), { recursive: true }); writeFileSync(newP, now); }
-      }
-    }
+    tree.moves.forEach(([oldP, newP], idx) => {
+      // only if this move was used (R emitted, recorded in usedMoves above)
+      if (!usedMoves.has(idx)) return;
+      const now = tree.get(newP);
+      rmSync(oldP, { force: true });
+      if (now !== null) { mkdirSync(dirname(newP), { recursive: true }); writeFileSync(newP, now); }
+    });
   }
   rows.sort((a, b) => Buffer.compare(Buffer.from(a.key), Buffer.from(b.key)));
   const outLines = rows.map((r) => r.line);
